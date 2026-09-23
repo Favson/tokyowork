@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Tokyo by LYA"
+description = "A clean, classy restaurant website for Tokyo by LYA in Ikoyi, Lagos, showcasing its dining experience, guest reviews, contact details, and location."
+version = "1.0.0"
+id = "artifacts/tokyo-by-lya"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18777
+
+[services.development]
+run = "pnpm --filter @workspace/tokyo-by-lya run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tokyo-by-lya", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tokyo-by-lya/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18777"
+BASE_PATH = "/"
