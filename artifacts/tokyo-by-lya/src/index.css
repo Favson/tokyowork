@@ -136,6 +136,29 @@ a { color: inherit; text-decoration: none; }
 .link-arrow svg { transition: transform .3s ease; }
 .link-arrow:hover svg { transform: translateX(5px); }
 .gold-line { background: linear-gradient(90deg, #cf9e54, rgba(207,158,84,0)); }
+.field-label {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: #cf9e54;
+  font: 500 0.61rem/1 var(--app-font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.field-input {
+  display: block;
+  width: 100%;
+  border: 1px solid rgba(241, 234, 219, 0.18);
+  border-radius: 0;
+  background: rgba(33, 29, 23, 0.72);
+  padding: 0.85rem 0.9rem;
+  color: #f1eadb;
+  font: 0.8rem/1.5 var(--app-font-sans);
+  outline: none;
+  transition: border-color .2s ease, background-color .2s ease;
+}
+.field-input::placeholder { color: #817667; }
+.field-input:focus { border-color: #cf9e54; background: rgba(33, 29, 23, 0.95); }
+.field-input:invalid:not(:placeholder-shown) { border-color: rgba(196, 109, 82, .7); }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
