@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import {
   CreateOrderBody,
   CreateOrderResponse,
@@ -10,8 +10,9 @@ import {
   UpdateOrderPaymentParams,
   UpdateOrderPaymentResponse,
 } from "@workspace/api-zod";
-import { db, ordersTable, type StoredOrderItem } from "@workspace/db";
+import { db, ordersTable, type StoredOrderItem, userProfilesTable } from "@workspace/db";
 import { menuItems } from "./menu";
+import { getAuthenticatedUser, requireAdmin, requireAdminMfa, requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
@@ -22,7 +23,7 @@ function createOrderNumber(): string {
   return `TOK-${day}-${suffix}`;
 }
 
-router.get("/orders", async (req, res): Promise<void> => {
+router.get("/orders", requireAuth, requireAdmin, async (req, res): Promise<void> => {
   const orders = await db
     .select()
     .from(ordersTable)
@@ -32,7 +33,7 @@ router.get("/orders", async (req, res): Promise<void> => {
   res.json(ListOrdersResponse.parse(orders));
 });
 
-router.post("/orders", async (req, res): Promise<void> => {
+router.post("/orders", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateOrderBody.safeParse(req.body);
   if (!parsed.success) {
     req.log.warn({ errors: parsed.error.message }, "Invalid order request");
@@ -41,6 +42,7 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const { customerName, customerPhone, fulfillmentMethod, deliveryAddress, notes } = parsed.data;
+  const { user } = getAuthenticatedUser(req);
   if (fulfillmentMethod === "delivery" && !deliveryAddress?.trim()) {
     res.status(400).json({ error: "A delivery address is required for delivery orders." });
     return;
@@ -64,10 +66,31 @@ router.post("/orders", async (req, res): Promise<void> => {
   }
 
   const subtotal = orderItems.reduce((sum, item) => sum + item.lineTotal, 0);
+  await db
+    .insert(userProfilesTable)
+    .values({
+      authUserId: user.id,
+      email: user.email ?? `${user.id}@no-email.invalid`,
+      displayName: typeof user.user_metadata?.full_name === "string"
+        ? user.user_metadata.full_name
+        : typeof user.user_metadata?.name === "string"
+          ? user.user_metadata.name
+          : null,
+      avatarUrl: typeof user.user_metadata?.avatar_url === "string" ? user.user_metadata.avatar_url : null,
+    })
+    .onConflictDoUpdate({
+      target: userProfilesTable.authUserId,
+      set: {
+        email: user.email ?? `${user.id}@no-email.invalid`,
+        updatedAt: new Date(),
+      },
+    });
+
   const [order] = await db
     .insert(ordersTable)
     .values({
       orderNumber: createOrderNumber(),
+      userId: user.id,
       customerName,
       customerPhone,
       fulfillmentMethod,
@@ -84,17 +107,22 @@ router.post("/orders", async (req, res): Promise<void> => {
   res.status(201).json(CreateOrderResponse.parse(order));
 });
 
-router.get("/orders/:orderNumber", async (req, res): Promise<void> => {
+router.get("/orders/:orderNumber", requireAuth, async (req, res): Promise<void> => {
   const params = GetOrderParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
     return;
   }
 
+  const { user } = getAuthenticatedUser(req);
+  const isAdmin = user.email ? (process.env.ADMIN_EMAILS ?? "").split(",").map((email) => email.trim().toLowerCase()).includes(user.email.toLowerCase()) : false;
   const [order] = await db
     .select()
     .from(ordersTable)
-    .where(eq(ordersTable.orderNumber, params.data.orderNumber));
+    .where(and(
+      eq(ordersTable.orderNumber, params.data.orderNumber),
+      ...(isAdmin ? [] : [eq(ordersTable.userId, user.id)]),
+    ));
 
   if (!order) {
     res.status(404).json({ error: "Order not found" });
@@ -104,7 +132,7 @@ router.get("/orders/:orderNumber", async (req, res): Promise<void> => {
   res.json(GetOrderResponse.parse(order));
 });
 
-router.patch("/orders/:orderNumber/payment", async (req, res): Promise<void> => {
+router.patch("/orders/:orderNumber/payment", requireAuth, requireAdmin, requireAdminMfa, async (req, res): Promise<void> => {
   const params = UpdateOrderPaymentParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

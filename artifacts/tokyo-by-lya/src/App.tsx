@@ -5,6 +5,8 @@ import { Link, Route, Switch, useLocation, useParams } from 'wouter';
 import { getGetOrderQueryKey, getListOrdersQueryKey, useCreateOrder, useGetOrder, useListMenuItems, useListOrders, useUpdateOrderPayment } from '@workspace/api-client-react';
 import type { MenuItem, Order, OrderInputFulfillmentMethod } from '@workspace/api-client-react';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { AdminMfaGate, AuthPanel } from '@/components/auth-panel';
+import { AuthProvider, clientAdminEmails, useAuth } from '@/lib/auth';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
@@ -368,6 +370,7 @@ function QuantityControl({ value, onDecrease, onIncrease, name }: { value: numbe
 }
 
 function OrderPage() {
+  const { user } = useAuth();
   const { data: menu, isLoading: menuLoading, isError: menuError, refetch: refetchMenu } = useListMenuItems();
   const createOrder = useCreateOrder();
   const queryClient = useQueryClient();
@@ -391,6 +394,7 @@ function OrderPage() {
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setFormError('');
+    if (!user) return setFormError('Sign in before placing an order.');
     if (!selectedItems.length) return setFormError('Choose at least one plate before continuing.');
     if (customerName.trim().length < 2) return setFormError('Please enter your name.');
     if (customerPhone.trim().length < 7) return setFormError('Please enter a valid phone number.');
@@ -421,6 +425,7 @@ function OrderPage() {
           <p className="eyebrow mb-5">Pickup or delivery · Bank transfer</p>
           <h1 className="display-serif text-[clamp(4rem,8vw,8rem)] leading-[0.82] tracking-[-0.05em]">Make it a<br /><em className="text-[#cf9e54]">Tokyo night.</em></h1>
           <p className="mt-7 max-w-[470px] text-[0.94rem] leading-[1.75] text-[#b9ad9c]">Choose your plates, tell us where to send them, then transfer the subtotal. Our team will confirm delivery and any delivery fee personally.</p>
+          <div className="mt-8 max-w-[560px]"><AuthPanel compact /></div>
         </div>
         <form onSubmit={submit} className="grid gap-10 lg:grid-cols-[1.35fr_.65fr] lg:gap-16">
           <section aria-labelledby="menu-heading">
@@ -492,14 +497,17 @@ function OrderStatus({ order }: { order: Order }) {
 }
 
 function OrderLookupPage() {
+  const { user } = useAuth();
   const params = useParams<{ orderNumber: string }>();
   const orderNumber = params.orderNumber ?? '';
-  const { data: order, isLoading, isError, refetch } = useGetOrder(orderNumber, { query: { queryKey: getGetOrderQueryKey(orderNumber) } });
-  return <OrderFrame eyebrow="Tokyo by LYA / Order status"><main className="mx-auto max-w-[820px] px-5 py-14 sm:px-8 sm:py-20">{isLoading && <div className="h-96 animate-pulse bg-[#29211b]" data-testid="loading-order" />}{isError && <div className="border border-[#c46d52]/40 bg-[#c46d52]/10 p-8" data-testid="text-lookup-error"><p className="eyebrow mb-4 !text-[#e7aa8d]">That reference wandered off</p><h1 className="display-serif text-4xl">We could not find this order.</h1><button type="button" onClick={() => refetch()} className="mt-6 flex items-center gap-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-[#cf9e54]" data-testid="button-retry-order"><RefreshCw size={14} /> Try again</button></div>}{order && <><div className="mb-7"><Link href="/order" className="inline-flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-[0.15em] text-[#cf9e54]" data-testid="link-new-order"><ChevronLeft size={14} /> Start another order</Link></div><OrderStatus order={order} /></>}</main></OrderFrame>;
+  const { data: order, isLoading, isError, refetch } = useGetOrder(orderNumber, { query: { enabled: Boolean(user), queryKey: getGetOrderQueryKey(orderNumber) } });
+  return <OrderFrame eyebrow="Tokyo by LYA / Order status"><main className="mx-auto max-w-[820px] px-5 py-14 sm:px-8 sm:py-20">{!user && <AuthPanel />}{isLoading && <div className="h-96 animate-pulse bg-[#29211b]" data-testid="loading-order" />}{isError && <div className="border border-[#c46d52]/40 bg-[#c46d52]/10 p-8" data-testid="text-lookup-error"><p className="eyebrow mb-4 !text-[#e7aa8d]">That reference wandered off</p><h1 className="display-serif text-4xl">We could not find this order.</h1><button type="button" onClick={() => refetch()} className="mt-6 flex items-center gap-2 font-mono text-[0.65rem] uppercase tracking-[0.15em] text-[#cf9e54]" data-testid="button-retry-order"><RefreshCw size={14} /> Try again</button></div>}{order && <><div className="mb-7"><Link href="/order" className="inline-flex items-center gap-2 font-mono text-[0.62rem] uppercase tracking-[0.15em] text-[#cf9e54]" data-testid="link-new-order"><ChevronLeft size={14} /> Start another order</Link></div><OrderStatus order={order} /></>}</main></OrderFrame>;
 }
 
 function AdminPage() {
-  const { data: orders, isLoading, isError, refetch } = useListOrders();
+  const { user } = useAuth();
+  const isAdmin = Boolean(user?.email && clientAdminEmails.has(user.email.toLowerCase()));
+  const { data: orders, isLoading, isError, refetch } = useListOrders({ query: { enabled: isAdmin, queryKey: getListOrdersQueryKey() } });
   const updatePayment = useUpdateOrderPayment();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
@@ -513,13 +521,15 @@ function AdminPage() {
       },
     });
   };
-  return <OrderFrame eyebrow="Staff console / Payment review"><main className="mx-auto max-w-[1440px] px-5 py-12 sm:px-8 sm:py-16 lg:px-12"><div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><p className="eyebrow mb-4">Internal view · No sign-in</p><h1 className="display-serif text-[clamp(3.5rem,7vw,7rem)] leading-[.82] tracking-[-.05em]">Tonight's<br /><em className="text-[#cf9e54]">orders.</em></h1></div><label className="flex items-center gap-3 border-b border-[#f1eadb]/20 pb-3 md:w-72"><Search size={15} className="text-[#cf9e54]" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent font-mono text-[0.67rem] uppercase tracking-[0.12em] text-[#f1eadb] outline-none placeholder:text-[#817667]" placeholder="Search orders" data-testid="input-search-orders" /></label></div>
+  if (!user) return <OrderFrame eyebrow="Staff console / Sign in"><main className="mx-auto max-w-[560px] px-5 py-14 sm:px-8 sm:py-20"><AuthPanel /></main></OrderFrame>;
+  if (!isAdmin) return <OrderFrame eyebrow="Staff console / Access denied"><main className="mx-auto max-w-[560px] px-5 py-14 sm:px-8 sm:py-20"><div className="border border-[#c46d52]/40 bg-[#c46d52]/10 p-8" role="alert" data-testid="text-admin-access-denied"><p className="eyebrow mb-4 !text-[#e7aa8d]">403 / Staff only</p><h1 className="display-serif text-4xl">This console is private.</h1><p className="mt-4 text-[0.82rem] leading-[1.7] text-[#e7aa8d]">Your account is not on the staff allowlist.</p></div></main></OrderFrame>;
+  return <OrderFrame eyebrow="Staff console / Payment review"><AdminMfaGate><main className="mx-auto max-w-[1440px] px-5 py-12 sm:px-8 sm:py-16 lg:px-12"><div className="mb-10 flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><p className="eyebrow mb-4">Private view · MFA protected</p><h1 className="display-serif text-[clamp(3.5rem,7vw,7rem)] leading-[.82] tracking-[-.05em]">Tonight's<br /><em className="text-[#cf9e54]">orders.</em></h1></div><label className="flex items-center gap-3 border-b border-[#f1eadb]/20 pb-3 md:w-72"><Search size={15} className="text-[#cf9e54]" /><input value={search} onChange={(event) => setSearch(event.target.value)} className="w-full bg-transparent font-mono text-[0.67rem] uppercase tracking-[0.12em] text-[#f1eadb] outline-none placeholder:text-[#817667]" placeholder="Search orders" data-testid="input-search-orders" /></label></div>
     {isLoading && <div className="space-y-4" data-testid="loading-admin"><div className="h-40 animate-pulse bg-[#29211b]" /><div className="h-40 animate-pulse bg-[#29211b]" /></div>}
     {isError && <div className="border border-[#c46d52]/40 bg-[#c46d52]/10 p-8" data-testid="text-admin-error"><p className="text-[#e7aa8d]">Orders could not be loaded.</p><button type="button" onClick={() => refetch()} className="mt-5 flex items-center gap-2 font-mono text-[0.63rem] uppercase tracking-[.15em] text-[#cf9e54]" data-testid="button-retry-admin"><RefreshCw size={14} /> Retry</button></div>}
     {updatePayment.isError && <p className="mb-5 border border-[#c46d52]/40 bg-[#c46d52]/10 p-4 text-[0.75rem] text-[#e7aa8d]" role="alert" data-testid="text-payment-update-error">That payment update did not save. Please try again.</p>}
     {!isLoading && !isError && !visibleOrders.length && <div className="border border-dashed border-[#f1eadb]/20 p-12 text-center" data-testid="text-empty-admin"><Clipboard className="mx-auto mb-4 text-[#cf9e54]" size={23} /><p className="display-serif text-3xl">No orders here yet.</p><p className="mt-3 text-[0.8rem] text-[#958a7a]">{search ? 'Try another search.' : 'Incoming bank transfer orders will appear here.'}</p></div>}
     <div className="space-y-4">{visibleOrders.map((order) => <article key={order.orderNumber} className="border border-[#f1eadb]/15 bg-[#29211b] p-5 sm:p-7" data-testid={`card-admin-order-${order.orderNumber}`}><div className="flex flex-col justify-between gap-5 border-b border-[#f1eadb]/10 pb-5 lg:flex-row lg:items-start"><div><div className="flex flex-wrap items-center gap-3"><span className="font-mono text-[0.72rem] tracking-[.12em] text-[#cf9e54]">{order.orderNumber}</span><span className={`border px-2 py-1 font-mono text-[0.54rem] uppercase tracking-[.12em] ${order.paymentStatus === 'confirmed' ? 'border-[#a8c19b]/40 text-[#a8c19b]' : order.paymentStatus === 'rejected' ? 'border-[#c46d52]/40 text-[#e7aa8d]' : 'border-[#cf9e54]/40 text-[#cf9e54]'}`} data-testid={`status-admin-payment-${order.orderNumber}`}>{order.paymentStatus}</span></div><h2 className="mt-3 display-serif text-3xl text-[#f1eadb]">{order.customerName}</h2><p className="mt-1 font-mono text-[0.65rem] text-[#958a7a]">{order.customerPhone} · {order.fulfillmentMethod}</p></div><div className="lg:text-right"><p className="font-mono text-[0.62rem] uppercase tracking-[.15em] text-[#958a7a]">Transfer amount</p><p className="mt-1 font-mono text-xl text-[#cf9e54]">{naira(order.subtotal)}</p>{order.fulfillmentMethod === 'delivery' && <p className="mt-1 text-[0.65rem] text-[#958a7a]">+ delivery fee to confirm</p>}</div></div><div className="grid gap-6 py-5 lg:grid-cols-[1.1fr_.9fr]"><div><p className="eyebrow mb-3">Items</p><div className="space-y-2">{order.items.map((item) => <div key={item.menuItemId} className="flex justify-between gap-4 font-mono text-[0.68rem]"><span className="text-[#b9ad9c]">{item.quantity} × {item.name}</span><span>{naira(item.lineTotal)}</span></div>)}</div>{order.deliveryAddress && <p className="mt-4 text-[0.74rem] text-[#958a7a]"><span className="text-[#cf9e54]">Deliver to:</span> {order.deliveryAddress}</p>}{order.notes && <p className="mt-3 text-[0.74rem] italic text-[#958a7a]">“{order.notes}”</p>}</div><div><label className="eyebrow mb-3 block" htmlFor={`note-${order.orderNumber}`}>Staff note <span className="text-[#817667]">(optional)</span></label><textarea id={`note-${order.orderNumber}`} value={notes[order.orderNumber] ?? order.staffNote ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [order.orderNumber]: event.target.value }))} className="field-input min-h-20 resize-y" placeholder="Add context for the customer" data-testid={`input-staff-note-${order.orderNumber}`} /></div></div><div className="flex flex-wrap justify-end gap-3 border-t border-[#f1eadb]/10 pt-5"><button type="button" onClick={() => update(order, 'rejected')} disabled={updatePayment.isPending} className="border border-[#c46d52]/50 px-4 py-3 font-mono text-[0.61rem] uppercase tracking-[.14em] text-[#e7aa8d] transition-colors hover:bg-[#c46d52]/10 disabled:opacity-50" data-testid={`button-reject-payment-${order.orderNumber}`}>Reject payment</button><button type="button" onClick={() => update(order, 'confirmed')} disabled={updatePayment.isPending} className="flex items-center gap-2 bg-[#cf9e54] px-5 py-3 font-mono text-[0.61rem] uppercase tracking-[.14em] text-[#211d17] transition-colors hover:bg-[#e1b96f] disabled:opacity-50" data-testid={`button-confirm-payment-${order.orderNumber}`}><Check size={14} /> Confirm payment</button></div></article>)}</div>
-  </main></OrderFrame>;
+  </main></AdminMfaGate></OrderFrame>;
 }
 
 function RoutedErrorBoundary({ children }: { children: ReactNode }) {
@@ -528,19 +538,21 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
 
 export default function RootApp() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <RoutedErrorBoundary>
-          <Switch>
+    <AuthProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <RoutedErrorBoundary>
+            <Switch>
             <Route path="/" component={HomePage} />
             <Route path="/order" component={OrderPage} />
             <Route path="/order/:orderNumber" component={OrderLookupPage} />
             <Route path="/admin" component={AdminPage} />
             <Route component={() => <OrderFrame><main className="mx-auto max-w-[720px] px-5 py-24 text-center"><p className="eyebrow mb-5">404 / Page not found</p><h1 className="display-serif text-6xl">Nothing here.</h1><Link href="/" className="mt-8 inline-flex items-center gap-2 font-mono text-xs uppercase tracking-[.15em] text-[#cf9e54]" data-testid="link-not-found-home">Return to Tokyo <ArrowRight size={15} /></Link></main></OrderFrame>} />
-          </Switch>
-        </RoutedErrorBoundary>
-        <Toaster />
-      </TooltipProvider>
-    </QueryClientProvider>
+            </Switch>
+          </RoutedErrorBoundary>
+          <Toaster />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </AuthProvider>
   );
 }

@@ -47,6 +47,8 @@ paths:
       operationId: listOrders
       tags: [orders]
       summary: List orders for staff review
+      security:
+        - BearerAuth: []
       responses:
         "200":
           description: Orders
@@ -60,6 +62,8 @@ paths:
       operationId: createOrder
       tags: [orders]
       summary: Create a bank transfer order
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
@@ -84,6 +88,8 @@ paths:
       operationId: getOrder
       tags: [orders]
       summary: Get an order by its customer-facing reference
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/OrderNumber"
       responses:
@@ -104,6 +110,8 @@ paths:
       operationId: updateOrderPayment
       tags: [orders]
       summary: Confirm or reject an order payment
+      security:
+        - BearerAuth: []
       parameters:
         - $ref: "#/components/parameters/OrderNumber"
       requestBody:
@@ -126,6 +134,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     OrderNumber:
       name: orderNumber

@@ -11,6 +11,7 @@ export type StoredOrderItem = {
 export const ordersTable = pgTable("orders", {
   id: serial("id").primaryKey(),
   orderNumber: text("order_number").notNull().unique(),
+  userId: text("user_id"),
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone").notNull(),
   fulfillmentMethod: text("fulfillment_method").notNull(),
